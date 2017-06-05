@@ -1,0 +1,32 @@
+{
+  "name": "nafl",
+  "version": "1.0.0",
+  "description": "crawl football info from yahoo",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nhonduyen/nafl.git"
+  },
+  "keywords": [
+    "nafl"
+  ],
+  "author": "NGUYEN NHON DUYEN",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nhonduyen/nafl/issues"
+  },
+  "homepage": "https://github.com/nhonduyen/nafl#readme",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.1",
+    "cron": "^1.2.1",
+    "express": "^4.15.3",
+    "http": "0.0.0",
+    "js-crawler": "^0.3.19",
+    "mysql": "^2.13.0",
+    "request": "^2.81.0",
+    "url-parse": "^1.1.9"
+  }
+}
