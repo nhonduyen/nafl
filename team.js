@@ -165,7 +165,7 @@ module.exports.crawlPlayerTeam = function(url, callback) {
 							console.log(err);
 							throw err;
 						}
-						connection.query(insertTeamPlayer+queries, function(err, rows) {
+						connection.query(sqls, function(err, rows) {
 							connection.destroy();
 							if (err) console.log('Error running query', err);
 							console.log('Insert/Update teams_players/player_pos');
