@@ -18,30 +18,50 @@ let pool  = mysql.createPool({
 	database    	: 'sport',
 	multipleStatements: true
 });
-
+let crawler = new Crawler().configure({
+	ignoreRelative: true,
+	dept: 1,
+	maxRequestsPerSecond: 100,
+	maxConcurrentRequests: 10,
+	forgetCrawled: false,
+	shouldCrawl: function (url) {
+		return url.indexOf("gamelog") > 0;
+	}
+});
 
 module.exports.getUrlTail = function(url, sym, index){
 	let arrUrlParam = url.split(sym);
 	return arrUrlParam[arrUrlParam.length - index];
 }
 
-module.exports.crawlPlayer = function() {
+module.exports.crawlPlayer = function(callback) {
 	
-	let alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
-	let crawlUrls = [];
-	for (let i = alphabet.length - 1; i >= 0; i--) {
-		let searchLink = "https://sports.yahoo.com/site/api/resource/sports.league.playerssearch;count=1000;league=nfl;name="+alphabet[i]+";pos=;"+
-		"start=?bkt=[%22sp-rz-aa-001%22,%22topcomment2-test5%22,%22sp-strm-lge-test3%22,%22sp-ssl-test%22,%22spdmtest%22,%22sp-s2-bball-all%22,"+
-		"%22sp-q2-reel-aa-2%22,%22spexp1-AA-5pct01%22,%22sp-full-ssl-control%22,%22sp-ssl2-test%22,%22sp-ssl3-control%22,%22sp-ss4-test%22,"+
-		"%22sp-ssl5-test%22,%22sp-ssl6-test%22,%22sp-football-landing-ctl%22]&device=desktop&feature=canvassOffnet,newContentAttribution,"+
-		"livecoverage,canvass,forceDarlaSSL,s2dedup&intl=us&lang=en-US&partner=none&prid=5351df9cgnl6j&region=US&site=sports&tz=America/"+
-		"Los_Angeles&ver=1.0.1412&returnMeta=true";
-		crawlUrls.push(searchLink);
-	}
-	async.eachSeries(crawlUrls, module.exports.requestPlayer, function() {
-		console.log('Insert players/stats done');
-	});    
+	let alphabet = "z".split("");
 	
+	async.waterfall([
+		function(callback) {
+			let crawlUrls = [];
+			for (let i = alphabet.length - 1; i >= 0; i--) {
+				let searchLink = "https://sports.yahoo.com/site/api/resource/sports.league.playerssearch;count=1000;league=nfl;name="+alphabet[i]+";pos=;"+
+				"start=?bkt=[%22sp-rz-aa-001%22,%22topcomment2-test5%22,%22sp-strm-lge-test3%22,%22sp-ssl-test%22,%22spdmtest%22,%22sp-s2-bball-all%22,"+
+				"%22sp-q2-reel-aa-2%22,%22spexp1-AA-5pct01%22,%22sp-full-ssl-control%22,%22sp-ssl2-test%22,%22sp-ssl3-control%22,%22sp-ss4-test%22,"+
+				"%22sp-ssl5-test%22,%22sp-ssl6-test%22,%22sp-football-landing-ctl%22]&device=desktop&feature=canvassOffnet,newContentAttribution,"+
+				"livecoverage,canvass,forceDarlaSSL,s2dedup&intl=us&lang=en-US&partner=none&prid=5351df9cgnl6j&region=US&site=sports&tz=America/"+
+				"Los_Angeles&ver=1.0.1412&returnMeta=true";
+				crawlUrls.push(searchLink);
+			}
+			callback(null, crawlUrls);
+		},
+		function(urls, callback) {
+			async.eachSeries(urls, module.exports.requestPlayer, function() {
+				console.log('Insert players/stats done');
+				callback();
+			});    
+		}
+		], function(err) {
+			console.log('Insert player info done');
+			callback();
+		});
 }
 
 module.exports.requestPlayer = function(url, callback) {
@@ -74,24 +94,17 @@ module.exports.requestPlayer = function(url, callback) {
 			module.exports.insertPlayer(players, urls, callback);
 		},
 		function(urls, callback) {
-			module.exports.insertStat(urls, callback);
+			async.eachSeries(urls, module.exports.insertStat, function() {
+				console.log('Insert stats done', urls);
+				callback();
+			});
 		}
 		]
-		, function(){ callback(); });
+		, function() { console.log('Finished request '); callback(); });
 	
 }
 module.exports.insertPlayerBySearchApi = function(url, callback) {
 	let categories = ['Passing', 'Rushing', 'Receiving', 'Kicking', 'Returns', 'Punting', 'Defense'];
-	let crawler = new Crawler().configure({
-		ignoreRelative: true,
-		dept: 1,
-		maxRequestsPerSecond: 100,
-		maxConcurrentRequests: 10,
-		forgetCrawled: false,
-		shouldCrawl: function (url) {
-			return url.indexOf("gamelog") > 0;
-		}
-	});
 	crawler.crawl({ url: url
 		, success: function (page) {
 			let $ = cheerio.load(page.content);
@@ -203,12 +216,11 @@ module.exports.insertPlayer = function(player, urls , callback) {
 			else if(rows.insertId != null) console.log('Inserted player_id ', player.player_id);
 			else console.log('Update player ', player.player_id);
 		});
+		callback(null, urls);
 	});
-	callback(null, urls);
 }
 
-module.exports.insertStat = function(urls, callback) {
-	async.eachSeries(urls, function(url, callback) {
+module.exports.insertStat = function(url, callback) {
 		let q = url.indexOf('?');
 		let p = url.indexOf('p.');
 		let player_id = url.substring(p + 2).split('&');
@@ -275,9 +287,7 @@ module.exports.insertStat = function(urls, callback) {
 						callback(null, statsObject);
 					});
 				}
-				else {
-					if(callback) callback(null, undefined);
-				}
+				else callback(null, undefined);
 			},
 			function(statsObject,callback) {
 				if (statsObject) {
@@ -313,14 +323,13 @@ module.exports.insertStat = function(urls, callback) {
 						}
 						connection.query(sql, function(err, rows) {
 							connection.destroy();
-							if (err) console.log('Error running query', err);
+							if (err) { console.log('Error running query', err); callback(null, undefined, undefined); } 
 							else if (rows.insertId != null) { console.log('Insert rosters id', rows.insertId); callback(null,statsObject, game_id);}
 							else { console.log('Update rosters affectedRows', rows.affectedRows); callback(null,statsObject, game_id);}
 						});
-						if(callback) callback(null, undefined, undefined);
 					});
 				} 
-				if(callback) callback(null, undefined, undefined);
+				else callback(null, undefined, undefined);
 			},
 			function(statsObject, game_id, callback) {
 				if (statsObject && game_id) {
@@ -341,18 +350,17 @@ module.exports.insertStat = function(urls, callback) {
 							else if (rows.insertId != null) { console.log('Insert stats id', rows.insertId);}
 							else { console.log('Update stats affectedRows', rows.affectedRows);}
 						});
-						if(callback) callback();
+						callback();
 					});
 				} 
-				if(callback) callback();
 			}
-			], function() { console.log("Finished insert stats"); callback(); });
-}, function(err) { callback();});
+			], function() { console.log('Finished insert stats'); callback(); });
 
 }
 
-module.exports.normalizeStats = function() {
-	async.series([
+module.exports.normalizeStats = function(callback) {
+	
+	async.waterfall([
 		function(callback) {
 			let sql = "DROP TABLE IF EXISTS `wide`; create table wide as select * from stats;";
 			pool.getConnection(function(err, connection) {
@@ -364,12 +372,13 @@ module.exports.normalizeStats = function() {
 					connection.destroy();
 					if (err) console.log('Error running query', err);
 					console.log('Create table wide');
-					callback();
+					callback(err, 1);
 				});
 				
 			});
 		},
-		function(callback) {
+		function(t, callback) {
+			console.log(t);
 			let sql ="DROP TABLE IF EXISTS `statscolumns`; create table statscolumns(id int auto_increment primary key,column_name varchar(30)); "
 			+"insert into statscolumns(COLUMN_NAME) SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'sport'  AND "
 			+"TABLE_NAME = 'stats';";			
@@ -382,20 +391,13 @@ module.exports.normalizeStats = function() {
 					connection.destroy();
 					if (err) console.log('Error running query', err);
 					console.log('Create table statscolumns');
-					callback();
+					callback(err, 2);
 				});
 				
-			});
-		}
-		
-		],function(err) {
-			module.exports.insertNormalize();
-		});
-}
-
-module.exports.insertNormalize = function() {
-	async.waterfall([
-		function(callback) {
+			});	
+		},
+		function(t, callback) {
+			console.log(t);
 			let sql ="select column_name from statscolumns where column_name not in ('id','player_id','game_id','team_id','STATS_TYPE','last_changed');";			
 			pool.getConnection(function(err, connection) {
 				if (err) {
@@ -405,37 +407,55 @@ module.exports.insertNormalize = function() {
 				connection.query(sql, function(err, rows) {
 					connection.destroy();
 					if (err) console.log('Error running query', err);
-					callback(null, rows);
-					
+					callback(null, rows);				
 
 				});
 				
 			});
 		},
 		function(rows, callback) {
-			let total = rows.length;
-			let finishedCount = 0;
-			for (let i = rows.length - 1; i >= 0; i--) {
-				let sql = "insert into thin (player_id, game_id, team_id, STATS_TYPE, name, value) "
-				+   "select player_id, game_id, team_id, STATS_TYPE, ??,? from wide;";
-				let name = rows[i].column_name;
-				let inserts  = [rows[i].column_name,rows[i].column_name];
-				sql = mysql.format(sql, inserts);
-				pool.getConnection(function(err, connection) {
-					if (err) {
-						console.log(err);
-						return ;
-					}
-					connection.query(sql, function(err, rows) {
-						finishedCount++;
-						connection.destroy();
-						if (err) console.log('Error running query', err);
-						console.log('Normalize column '+name+' total: %d/%d affected rows',finishedCount,total,rows.affectedRows);
-					});
-				});
-			}
-			callback();
+			async.eachSeries(rows, module.exports.insertNormalize, function() {
+				console.log('done loop');
+				callback();
+			});
 		}
-		], function() { console.log('Finished normalizeStats'); });
-	
+		],function(err, result) {
+			if (err) console.log(err);
+			console.log('done');
+			callback();
+		});
 }
+
+module.exports.insertNormalize = function(row, callback) {
+	let sql = "insert into thin (player_id, game_id, team_id, STATS_TYPE, name, value) "
+	+   "select player_id, game_id, team_id, STATS_TYPE, ??,? from wide;";
+	let name = row.column_name;
+	let inserts  = [row.column_name,row.column_name];
+	sql = mysql.format(sql, inserts);
+	pool.getConnection(function(err, connection) {
+		if (err) {
+			console.log(err);
+			return ;
+		}
+		connection.query(sql, function(err, rows) {
+			connection.destroy();
+			if (err) console.log('Error running query', err);
+			console.log('Normalize column ',name, rows.affectedRows);
+			callback();
+		});
+		
+	});
+}
+
+module.exports.executeQuery = function(sql) {
+	pool.getConnection(function(err, connection) {
+		if (err) {
+			throw err; return false;
+		}
+		connection.query(sql, function(err, rows) {
+			connection.destroy();
+			if (err) console.log('Error running query', err);
+		});
+	});
+}
+

@@ -25,7 +25,7 @@ module.exports.getUrlTail = function(url, sym, index){
 	return arrUrlParam[arrUrlParam.length - index];
 }
 
-module.exports.crawlTeam = function(url){
+module.exports.crawlTeam = function(url, callback){
 	let crawler = new Crawler().configure({
 		ignoreRelative: true,
 		dept: 1,
@@ -62,6 +62,8 @@ module.exports.crawlTeam = function(url){
 				async.eachSeries(crawlUrls, module.exports.crawlPlayerTeam, function() {
 					console.log('Insert player_pos, teams_players done');
 					console.log(crawlUrls);
+					pool.end();
+					callback();
 				});    
 			}
 			else { 
@@ -82,10 +84,10 @@ module.exports.crawlTeam = function(url){
 								return ;
 							}
 							connection.query(sql, function(err, rows) {
-								connection.destroy();
+								connection.release();
 								if (err) console.log('Error running query', err);
-								else if(rows.insertId != null) console.log('Inserted team id ', rows.insertId);
-								else console.log('Update team', team.code);
+								if(rows.affectedRows > 1) console.log('Update team id ', rows.insertId);
+								else console.log('Insert team', rows.insertId);
 							});
 
 						});
@@ -166,7 +168,7 @@ module.exports.crawlPlayerTeam = function(url, callback) {
 							throw err;
 						}
 						connection.query(sqls, function(err, rows) {
-							connection.destroy();
+							connection.release();
 							if (err) console.log('Error running query', err);
 							console.log('Insert/Update teams_players/player_pos');
 						});
